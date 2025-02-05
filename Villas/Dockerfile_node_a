@@ -9,6 +9,6 @@ WORKDIR /configs
 
 ENTRYPOINT [ "sh" ]
 
-#CMD ["-c","villas signal -f json -F 50 -r 1600 -a 1.414 sine | villas pipe -f json ./node.conf nodo_lab_a"]
+CMD ["-c","villas signal -f json -F 50 -r 1600 -a 1.414 sine | villas pipe -f json ./node.conf nodo_lab_a"]
 
-CMD ["-c","villas-node ./path.conf"]
+#CMD ["-c","villas-node ./path.conf"]
