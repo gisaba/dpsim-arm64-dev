@@ -128,6 +128,8 @@ RUN mkdir jupyterlab
 
 WORKDIR /dpsim/jupyterlab
 
+COPY ./examples /dpsim/jupyterlab/examples
+
 EXPOSE 8888
 
 # Set default command
