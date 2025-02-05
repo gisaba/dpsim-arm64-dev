@@ -109,11 +109,11 @@ RUN mkdir build && cd build
 WORKDIR /dpsim/build
 
 RUN cmake ${CMAKE_OPTS} ..
-# RUN cmake ${CMAKE_OPTS} --build .
+
 RUN cmake --build . --target dpsimpy
 
 # required by dpsimpy 
-RUN pip3 install numpy 
+RUN pip3 install numpy jupyterlab
 
 WORKDIR /dpsim
 
@@ -122,20 +122,13 @@ ARG CMAKE_OPTS=""
 RUN python3 /dpsim/setup.py build_ext --inplace
 
 ENV LD_LIBRARY_PATH=/usr/local/lib:/dpsim/build
-ENV PYTHONPATH=$(pwd):$(pwd)/../python/src/:/usr/lib:/usr/local/lib 
+ENV PYTHONPATH=/dpsim/build:/dpsim/python/src/:/usr/lib:/usr/local/lib 
 
-COPY . /dpsim
+RUN mkdir jupyterlab 
 
-# RUN if [ -f requirements.txt ]; then \
-#     pip install --no-cache-dir -r requirements.txt; \
-#     fi
+WORKDIR /dpsim/jupyterlab
 
+EXPOSE 8888
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
-
-# # Imposta lo script come punto di ingresso
-# ENTRYPOINT ["/entrypoint.sh"]
-
-# Imposta il comando di default
-CMD ["python3.9"]
+# Set default command
+CMD ["jupyter-lab","--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
