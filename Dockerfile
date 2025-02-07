@@ -1,136 +1,138 @@
-FROM debian:11-slim
+# Fase di build
+FROM debian:11-slim AS builder
 
 ARG CIM_VERSION=CGMES_2.4.15_16FEB2016
 ARG CIMPP_COMMIT=1b11d5c17bedf0ae042628b42ecb4e49df70b2f6
 ARG VILLAS_VERSION=18cdd2a6364d05fbf413ca699616cd324abfcb54
 
-ARG CMAKE_OPTS="-- -j 4"
-ARG MAKE_OPTS=-j4
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get -y update
+# Unione di tutti i comandi apt-get in un singolo layer
+RUN apt-get -y update && \
+    apt-get -y install --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        git \
+        libconfig-dev \
+        libcurl4-gnutls-dev \
+        libeigen3-dev \
+        libfmt-dev \
+        libgraphviz-dev \
+        libgsl-dev \ 
+        libjansson-dev \
+        libmosquitto-dev \
+        libnl-3-dev \
+        libprotobuf-dev \
+        libprotoc-dev \
+        libspdlog-dev \
+        libssl-dev \
+        libwebsockets-dev \
+        pkg-config \
+        protobuf-c-compiler \
+        python3-dev \
+        python3-pip \
+        uuid-dev \
+        wget && \
+    rm -rf /var/lib/apt/lists/*
 
-# Toolchain
-RUN apt-get -y install \
-	build-essential \
-	gcc g++ clang \
-	git \
-	make cmake pkg-config \
-	python3-pip \
-	wget \
-	doxygen graphviz \
-	gdb \
-	python3-dev \
-	libeigen3-dev \
-	libxml2-dev \
-	libgraphviz-dev \
-	libgsl-dev \
-	libspdlog-dev \
-	pybind11-dev \
-	libspdlog-dev \
-	libfmt-dev 
-
-
-# Build & Install sundials
+# Build sundials con ottimizzazioni
 RUN cd /tmp && \
-	git clone --branch v3.2.1 --recurse-submodules --depth 1 https://github.com/LLNL/sundials.git && \
-	mkdir -p sundials/build && cd sundials/build && \
-	cmake ${CMAKE_OPTS} .. \
-		-DCMAKE_BUILD_TYPE=Release && \
-	make ${MAKE_OPTS} install
+    git clone --branch v3.2.1 --depth 1 https://github.com/LLNL/sundials && \
+    cd sundials && \
+    mkdir build && cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_ARKODE=OFF -DBUILD_CVODE=OFF -DBUILD_IDA=OFF .. && \
+    make -j$(nproc) install && \
+    rm -rf /tmp/sundials
 
-## Install minimal VILLASnode dependencies
-RUN apt-get -y install \
-	libssl-dev \
-	uuid-dev \
-	libcurl4-gnutls-dev \
-	libjansson-dev \
-	libwebsockets-dev
-
-## Install optional VILLASnode dependencies
-RUN apt-get -y install \
-	libmosquitto-dev \
-	libconfig-dev \
-	libnl-3-dev \
-	protobuf-compiler \
-    libprotobuf-dev \
-    libprotoc-dev \
-    protobuf-c-compiler \
-    libprotobuf-c-dev 
-
-# Install libiec61850 from source
+# Installazione efficiente libiec61850
 RUN cd /tmp && \
-	wget https://libiec61850.com/wp-content/uploads/2019/03/libiec61850-1.3.3.tar.gz && \
-	tar -zxvf libiec61850-1.3.3.tar.gz && rm libiec61850-1.3.3.tar.gz && \
-	cd libiec61850-1.3.3 && \
-	mkdir build && cd build && \
-	cmake ${CMAKE_OPTS} .. \
-		-DBUILD_SHARED_LIBS=ON && \
-	make ${MAKE_OPTS} install && \
-	rm -rf /tmp/libiec61850-1.3.3
+    wget -q https://libiec61850.com/wp-content/uploads/2019/03/libiec61850-1.3.3.tar.gz && \
+    tar -zxf libiec61850-1.3.3.tar.gz && \
+    cd libiec61850-1.3.3 && \
+    mkdir -p build && \  
+    cd build && \
+    cmake -DBUILD_SHARED_LIBS=ON -DBUILD_EXAMPLES=OFF .. && \
+    make -j$(nproc) install && \
+    rm -rf /tmp/libiec61850-1.3.3*  
 
-## Install CIMpp from source
+# Build ottimizzata CIMpp
 RUN cd /tmp && \
-	git clone https://github.com/sogno-platform/libcimpp.git && \
-	mkdir -p libcimpp/build && cd libcimpp/build && \
-	git checkout ${CIMPP_COMMIT} && \
-	git submodule update --init && \
-	cmake ${CMAKE_OPTS} .. \
-		-DBUILD_SHARED_LIBS=ON \
-		-DCMAKE_INSTALL_LIBDIR=/usr/local/lib \
-		-DUSE_CIM_VERSION=${CIM_VERSION} \
-		-DBUILD_ARABICA_EXAMPLES=OFF && \
-	make ${MAKE_OPTS} install && \
-	rm -rf /tmp/libcimpp
+    apt-get update -y && apt-get install -y libxml2-dev && \
+    git clone https://github.com/sogno-platform/libcimpp.git && \
+    cd libcimpp && \
+    git checkout ${CIMPP_COMMIT} && \
+    git submodule update --init --recursive && \
+    mkdir build && cd build && \
+    cmake \
+        -DLIBXML2_INCLUDE_DIR=/usr/include/libxml2 \
+        -DLIBXML2_LIBRARIES=/usr/lib/aarch64-linux-gnu/libxml2.so \  
+        -DBUILD_SHARED_LIBS=ON \
+        -DUSE_CIM_VERSION=${CIM_VERSION} \
+        .. && \
+    make -j$(nproc) install && \
+    rm -rf /tmp/libcimpp
 
-
-
-## Install VILLASnode from source
+# Build VILLASnode con ottimizzazioni
 RUN cd /tmp && \
-	git clone --recurse-submodules https://github.com/VILLASframework/node.git villas-node && \
-	mkdir -p villas-node/build && cd villas-node/build && \
-	git checkout ${VILLAS_VERSION} && \
-	cmake ${CMAKE_OPTS} .. \
-		-DCMAKE_INSTALL_LIBDIR=/usr/local/lib \
-		-DDOWNLOAD_GO=OFF && \
-	make install && \
-	rm -rf /tmp/villas-node
+    # Installazione dipendenze mancanti
+    apt-get install -y protobuf-compiler && \
+    git clone https://github.com/VILLASframework/node.git villas-node && \
+    cd villas-node && \
+    git checkout ${VILLAS_VERSION} && \
+    git submodule update --init --recursive && \
+    mkdir -p build && cd build && \
+    cmake \
+        -DProtobuf_PROTOC_EXECUTABLE=/usr/bin/protoc \  
+        -DDOWNLOAD_GO=OFF \
+        -DENABLE_STATIC_LINKING=ON \
+        .. && \
+    make -j$(nproc) install && \
+    rm -rf /tmp/villas-node
 
-
-## Build DPSim Python module
-RUN git clone https://github.com/sogno-platform/dpsim.git /dpsim
-WORKDIR /dpsim
-RUN git checkout tags/v1.1.1
-
-RUN pip install -r requirements.txt 
-
-RUN mkdir build && cd build
-
+# Build DPSim
+RUN git clone --depth 1 --branch v1.1.1 https://github.com/sogno-platform/dpsim.git /dpsim
 WORKDIR /dpsim/build
+RUN pip3 install --no-cache-dir -r ../requirements.txt numpy && \
+    cmake .. && \
+    make -j$(nproc) dpsimpy && \
+    find . -name '*.so' -exec strip -s {} \;  
 
-RUN cmake ${CMAKE_OPTS} ..
+# Fase finale
+FROM debian:11-slim
 
-RUN cmake --build . --target dpsimpy
+ENV DEBIAN_FRONTEND=noninteractive \
+    LD_LIBRARY_PATH=/usr/local/lib \
+    PYTHONPATH=/dpsim/build:/dpsim/python/src
 
-# required by dpsimpy 
-RUN pip3 install numpy jupyterlab
+# Installazione runtime dependencies (corretto libgsl25)
+RUN apt-get -y update && \
+    apt-get -y install --no-install-recommends \
+        libcurl4 \
+        libgsl25 \
+        libjansson4 \
+        libspdlog1 \
+        libstdc++6 \
+        python3 \
+        python3-pip \
+        python3-numpy \
+        libgraphviz-dev \     
+        graphviz \            
+        libgvc6 \             
+        libpathplan4 \        
+        libxdot4  \    
+		libgomp1 && \                        
+    rm -rf /var/lib/apt/lists/*
 
-WORKDIR /dpsim
-
-ARG CMAKE_OPTS=""
-
-RUN python3 /dpsim/setup.py build_ext --inplace
-
-ENV LD_LIBRARY_PATH=/usr/local/lib:/dpsim/build
-ENV PYTHONPATH=/dpsim/build:/dpsim/python/src/:/usr/lib:/usr/local/lib 
-
-RUN mkdir jupyterlab 
+# Copia soltanto gli artefatti necessari
+COPY --from=builder /usr/local/lib /usr/local/lib
+COPY --from=builder /dpsim /dpsim
 
 WORKDIR /dpsim/jupyterlab
+COPY ./examples ./examples
 
-COPY ./examples /dpsim/jupyterlab/examples
+RUN pip3 install --no-cache-dir jupyterlab
 
 EXPOSE 8888
 
-# Set default command
-CMD ["jupyter-lab","--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+CMD ["jupyter-lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
